@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef TEST_Z_FORTH
 
 // Fonction pour échanger deux nombres
 void swap(char *x, char *y) {
@@ -218,73 +219,7 @@ static const char* core = R"(
 
 )";
 
-
-
-/*
-static const char* core = R"(
-: emit    0 sys ;
-: .       1 sys ;
-: tell    2 sys ;
-: quit    128 sys ;
-: sin     129 sys ;
-: include 130 sys ;
-: save    131 sys ;
-: !    0 !! ;
-: @    0 @@ ;
-: ,    0 ,, ;
-: #    0 ## ;
-: [ 0 compiling ! ; immediate
-: ] 1 compiling ! ;
-: postpone 1 _postpone ! ; immediate
-: 1+ 1 + ;
-: 1- 1 - ;
-: over 1 pick ;
-: +!   dup @ rot + swap ! ;
-: inc  1 swap +! ;
-: dec  -1 swap +! ;
-: <    - <0 ;
-: >    swap < ;
-: <=   over over >r >r < r> r> = + ;
-: >=   swap <= ;
-: =0   0 = ;
-: not  =0 ;
-: !=   = not ;
-: cr   10 emit ;
-: br 32 emit ;
-: ..   dup . ;
-: here h @ ;
-: allot  h +!  ;
-: var : ' lit , here 5 allot here swap ! 5 allot postpone ; ;
-: const : ' lit , , postpone ; ;
-: begin   here ; immediate
-: again   ' jmp , , ; immediate
-: until   ' jmp0 , , ; immediate
-: { ( -- ) ' lit , 0 , ' >r , here ; immediate
-: x} ( -- ) ' r> , ' 1+ , ' dup , ' >r , ' = , postpone until ' r> , ' drop , ; immediate
-: exe ( XT -- ) ' lit , here dup , ' >r , ' >r , ' exit , here swap ! ; immediate
-: times ( XT n -- ) { >r dup >r exe r> r> dup x} drop drop ;
-: if      ' jmp0 , here 999 , ; immediate
-: unless  ' not , postpone if ; immediate
-: else    ' jmp , here 999 , swap here swap ! ; immediate
-: fi      here swap ! ; immediate
-: i ' lit , 0 , ' pickr , ; immediate
-: j ' lit , 2 , ' pickr , ; immediate
-: do ' swap , ' >r , ' >r , here ; immediate
-: loop+ ' r> , ' + , ' dup , ' >r , ' lit , 1 , ' pickr , ' > , ' jmp0 , , ' r> , ' drop , ' r> , ' drop , ; immediate
-: loop ' lit , 1 , postpone loop+ ;  immediate
-: s" compiling @ if ' lits , here 0 , fi here begin key dup 34 = if drop
-     compiling @ if here swap - swap ! else dup here swap - fi exit else , fi
-     again ; immediate
-: ." compiling @ if postpone s" ' tell , else begin key dup 34 = if drop exit else emit fi again
-     fi ; immediate
-
-." Welcome to zForth, " here . ." bytes used" cr ;
-
-)";
-//: wfe 132 sys ;
-*/
-
-int main(void)
+void main_zforth()
 {
     zf_init(0);
     zf_bootstrap();
@@ -299,12 +234,111 @@ int main(void)
 
     ret = zf_eval("wfe");
 
-    ret = zf_eval(": TEST 10 0 do  CR .\" Hello \"  loop ;");
-
-
     if (ret != ZF_OK) {
         printf("zForth Error 2!\n");
     }
+
+}
+#endif // TEST_Z_FORTH
+
+#ifdef TEST_LISP_FE
+
+#include <setjmp.h>
+#include "fe.h"
+
+static jmp_buf toplevel;
+static char buf[64000];
+
+static void onerror(fe_Context *ctx, const char *msg, fe_Object *cl) {
+  (void)(ctx), (void)(cl);
+  fprintf(stderr, "error: %s\n", msg);
+  longjmp(toplevel, -1);
+}
+
+
+int main_lisp_fe(const char *filename) {
+  int gc;
+  fe_Object *obj;
+  FILE *volatile fp = stdin;
+  fe_Context *ctx = fe_open(buf, sizeof(buf));
+
+  /* init input file */
+  fp = fopen(filename, "rb");
+  if (!fp) { fe_error(ctx, "could not open input file"); }
+
+
+  if (fp == stdin) { fe_handlers(ctx)->error = onerror; }
+  gc = fe_savegc(ctx);
+  setjmp(toplevel);
+
+  /* re(p)l */
+  for (;;) {
+    fe_restoregc(ctx, gc);
+    if (fp == stdin) { printf("> "); }
+    if (!(obj = fe_readfp(ctx, fp))) { break; }
+    obj = fe_eval(ctx, obj);
+    if (fp == stdin) { fe_writefp(ctx, obj, stdout); printf("\n"); }
+  }
+
+  return EXIT_SUCCESS;
+}
+
+#endif  // TEST_LISP_FE
+
+extern "C" int lisp_interpreter_main(int argc, char *argv[]);
+
+extern "C" int lisp_1k_main(int argc, char *argv[]);
+
+extern "C" int test_lua(int argc, char *argv[]);
+
+#include "test_cbor.h"
+
+extern void test_tcl_tcli();
+
+int test_json() ;
+
+int main(int argc, char *argv[])
+{
+/*
+Décommentez ci-dessous pour tester zForth. Dans la console affiche :
+
+Welcome to zForth, 1210 bytes used
+10
+WFE
+*/
+    // main_zforth();
+
+    // ==========================================================
+    // LISP : FE
+    // ==========================================================
+//    (void) main_lisp_fe("fe/scripts/fib.fe"); // affiche dans la console : 317811 (résultat d'un fibonacci n=28)
+
+   // (void) main_lisp_fe("test_lisp.lisp");
+
+    // ==========================================================
+    // LISP : LISP-INTERPRETER
+    // ==========================================================
+//    lisp_interpreter_main(argc, argv);
+
+    // ==========================================================
+    // LISP : TINY LISP
+    // ==========================================================
+//    lisp_1k_main(argc, argv);
+
+    // ==========================================================
+    // CBOR : JSON -> CBOR -> PARSE
+    // ==========================================================
+    //test_cbor();
+
+    // ==========================================================
+    // TCL : PARTCL
+    // ==========================================================
+    //test_tcl_tcli();
+
+    // ==========================================================
+    // JSON : test super optimized one
+    // ==========================================================
+    test_json();
 
     return 0;
 }
